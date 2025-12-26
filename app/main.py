@@ -1,5 +1,10 @@
 """Main Flask application."""
 import os
+import sys
+
+# Ensure repo root is in Python path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from flask import Flask, render_template
 from app.config import Config
 from app.routes.health import health_bp
