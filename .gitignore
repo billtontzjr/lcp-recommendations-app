@@ -1,0 +1,18 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Uploads
+uploads/
+*.xlsm
+*.xlsx
+*.docx
+
+# OS
+.DS_Store

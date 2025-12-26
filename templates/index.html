@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precision Life Care Planning - LCP Generator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PRECISION LIFE CARE PLANNING</h1>
+            <p class="subtitle">Life Care Plan Recommendations Generator</p>
+        </header>
+
+        <main>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="upload-section">
+                    <div class="upload-box" id="workbookDropZone">
+                        <div class="upload-icon">📁</div>
+                        <p class="upload-text">Drop Master Workbook here (.xlsm/.xlsx)</p>
+                        <p class="upload-subtext">or click to browse</p>
+                        <input type="file" id="workbookFile" name="file" accept=".xlsx,.xlsm" hidden>
+                        <p class="file-name" id="workbookFileName"></p>
+                    </div>
+
+                    <div class="upload-box secondary" id="summaryDropZone">
+                        <div class="upload-icon">📄</div>
+                        <p class="upload-text">Drop Medical Summary here (.docx) - Optional</p>
+                        <input type="file" id="summaryFile" name="medical_summary" accept=".docx" hidden>
+                        <p class="file-name" id="summaryFileName"></p>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" id="previewBtn" class="btn btn-secondary" disabled>Preview Costs</button>
+                    <button type="submit" id="generateBtn" class="btn btn-primary" disabled>Generate LCP Recommendations</button>
+                </div>
+            </form>
+
+            <div id="previewSection" class="preview-section hidden">
+                <h2>Cost Preview</h2>
+                <div class="patient-info" id="patientInfo"></div>
+                <div class="cost-summary" id="costSummary"></div>
+            </div>
+
+            <div id="loadingSection" class="loading-section hidden">
+                <div class="spinner"></div>
+                <p>Generating LCP Recommendations...</p>
+            </div>
+
+            <div id="errorSection" class="error-section hidden">
+                <p id="errorMessage"></p>
+            </div>
+
+            <div id="successSection" class="success-section hidden">
+                <div class="success-icon">✓</div>
+                <h2>LCP Recommendations Generated Successfully</h2>
+                <p id="successMessage"></p>
+                <div class="button-group">
+                    <button type="button" id="resetBtn" class="btn btn-secondary">Generate Another</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Precision Life Care Planning</p>
+            <p>William Tontz, Jr., MD, CLCP</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
