@@ -1,62 +1,141 @@
-"""Word document generation service."""
+"""Word document generation service - matching Farress app formatting."""
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from datetime import datetime
 from app.utils.currency import format_currency
 
 # Constants
 GRAY_BACKGROUND = "D3D3D3"
-BLACK_BORDER = "000000"
 FONT_NAME = "Times New Roman"
-DATA_FONT_SIZE = Pt(10)
-TITLE_FONT_SIZE = Pt(11)
-SMALL_FONT_SIZE = Pt(9)
 
 
-def set_cell_shading(cell, color):
-    """Set cell background color."""
-    shading = OxmlElement('w:shd')
-    shading.set(qn('w:fill'), color)
-    cell._tc.get_or_add_tcPr().append(shading)
-
-
-def set_cell_borders(cell, border_size=12, color="000000"):
-    """Set cell borders."""
+def set_cell_background(cell, color):
+    """Set the background color of a table cell."""
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
-
-    tcBorders = OxmlElement('w:tcBorders')
-    for border_name in ['top', 'left', 'bottom', 'right']:
-        border = OxmlElement(f'w:{border_name}')
-        border.set(qn('w:val'), 'single')
-        border.set(qn('w:sz'), str(border_size))
-        border.set(qn('w:color'), color)
-        tcBorders.append(border)
-
-    tcPr.append(tcBorders)
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:fill'), color)
+    tcPr.append(shd)
 
 
-def format_cell(cell, text, font_size=DATA_FONT_SIZE, bold=False, center=False, gray=False):
-    """Format a table cell with text and styling."""
-    cell.text = str(text) if text else ''
-    paragraph = cell.paragraphs[0]
-    run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
+def set_cell_padding(cell):
+    """Set padding (margins) for a table cell."""
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcMar = OxmlElement('w:tcMar')
+    for side in ['top', 'bottom']:
+        margin = OxmlElement(f'w:{side}')
+        margin.set(qn('w:w'), "70")
+        margin.set(qn('w:type'), 'dxa')
+        tcMar.append(margin)
+    tcPr.append(tcMar)
 
-    run.font.name = FONT_NAME
-    run.font.size = font_size
-    run.font.bold = bold
+
+def set_padding_for_table(table):
+    """Set padding for all cells in a table."""
+    for row in table.rows:
+        for cell in row.cells:
+            set_cell_padding(cell)
+
+
+def set_bold_borders(table):
+    """Set bold borders for a table."""
+    tbl = table._tbl
+    tblPr = tbl.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        tbl.insert(0, tblPr)
+
+    tblBorders = tblPr.find(qn('w:tblBorders'))
+    if tblBorders is None:
+        tblBorders = OxmlElement('w:tblBorders')
+        tblPr.append(tblBorders)
+
+    border_styles = {
+        "top": "single",
+        "left": "single",
+        "bottom": "single",
+        "right": "single",
+        "insideH": "single",
+        "insideV": "single"
+    }
+
+    for border_name, border_type in border_styles.items():
+        border = tblBorders.find(qn(f'w:{border_name}'))
+        if border is None:
+            border = OxmlElement(f'w:{border_name}')
+            tblBorders.append(border)
+        border.set(qn('w:val'), border_type)
+        border.set(qn('w:sz'), '12')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), '000000')
+
+
+def add_empty_gray_row(table):
+    """Add an empty gray row to the table with only left/right bold borders."""
+    empty_row = table.add_row()
+
+    for cell in empty_row.cells:
+        set_cell_background(cell, GRAY_BACKGROUND)
+        cell.text = ""
+
+    tbl = table._tbl
+    last_row = tbl.findall(qn("w:tr"))[-1]
+    cells = last_row.findall(qn("w:tc"))
+
+    for idx, tc in enumerate(cells):
+        tcPr = tc.find(qn("w:tcPr"))
+        if tcPr is None:
+            tcPr = OxmlElement("w:tcPr")
+            tc.insert(0, tcPr)
+        tcBorders = tcPr.find(qn("w:tcBorders"))
+        if tcBorders is None:
+            tcBorders = OxmlElement("w:tcBorders")
+            tcPr.append(tcBorders)
+
+        # Remove inner borders
+        for border_name in ["top", "bottom", "insideH", "insideV"]:
+            border = OxmlElement(f"w:{border_name}")
+            border.set(qn("w:val"), "nil")
+            tcBorders.append(border)
+
+        # Bold left border for first cell
+        if idx == 0:
+            left_border = OxmlElement("w:left")
+            left_border.set(qn("w:val"), "single")
+            left_border.set(qn("w:sz"), "12")
+            left_border.set(qn("w:color"), "000000")
+            tcBorders.append(left_border)
+
+        # Bold right border for last cell
+        if idx == len(cells) - 1:
+            right_border = OxmlElement("w:right")
+            right_border.set(qn("w:val"), "single")
+            right_border.set(qn("w:sz"), "12")
+            right_border.set(qn("w:color"), "000000")
+            tcBorders.append(right_border)
+
+
+def format_cell_text(cell, text, font_size=Pt(10), bold=False, center=False, gray=False):
+    """Format a cell with text and styling."""
+    cell.text = str(text) if text is not None else ''
+
+    if cell.paragraphs and cell.paragraphs[0].runs:
+        run = cell.paragraphs[0].runs[0]
+        run.font.name = FONT_NAME
+        run.font.size = font_size
+        run.font.bold = bold
 
     if center:
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     if gray:
-        set_cell_shading(cell, GRAY_BACKGROUND)
+        set_cell_background(cell, GRAY_BACKGROUND)
 
-    set_cell_borders(cell)
+    set_cell_padding(cell)
 
 
 def format_date(date_val):
@@ -70,35 +149,50 @@ def format_date(date_val):
     return str(date_val)
 
 
+def format_cost(value):
+    """Format cost value with commas and 2 decimal places."""
+    if value is None:
+        return "$0.00"
+    try:
+        val = float(value)
+        return f"${val:,.2f}"
+    except (ValueError, TypeError):
+        return "$0.00"
+
+
+def add_new_page(doc):
+    """Add a page break."""
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+
 def generate_lcp_document(patient_info, cost_data, output_path):
     """
     Generate the Life Care Plan Recommendations Word document.
-
-    Args:
-        patient_info: Patient information dictionary
-        cost_data: Cost calculation results dictionary
-        output_path: Path to save the generated document
-
-    Returns:
-        Path to the generated document
     """
     doc = Document()
 
     # Set default font
     style = doc.styles['Normal']
     style.font.name = FONT_NAME
-    style.font.size = DATA_FONT_SIZE
+    style.font.size = Pt(10)
+
+    # Set margins
+    section = doc.sections[0]
+    section.left_margin = Inches(0.9)
+    section.right_margin = Inches(0.9)
+    section.top_margin = Inches(0.9)
+    section.bottom_margin = Inches(0.9)
 
     # Page 1: Title Page
     add_title_page(doc, patient_info)
 
     # Page 2: Appendix A Summary
-    doc.add_page_break()
+    add_new_page(doc)
     add_appendix_a(doc, patient_info, cost_data)
 
     # Section Pages (one per category)
     for category, data in cost_data['category_totals'].items():
-        doc.add_page_break()
+        add_new_page(doc)
         add_section_page(doc, patient_info, category, data, cost_data['totals'])
 
     doc.save(output_path)
@@ -186,131 +280,201 @@ def add_appendix_a(doc, patient_info, cost_data):
 
     doc.add_paragraph()
 
-    # Patient info block
-    info_lines = [
-        f"Patient: {patient_info.get('patient_name', '')}",
-        f"Date of Birth: {format_date(patient_info.get('date_of_birth'))}",
-        f"Date of Injury: {format_date(patient_info.get('date_of_injury'))}",
-        f"Life Expectancy: {patient_info.get('life_expectancy', '')} years",
+    # Client info with tabs
+    client_info = [
+        ("Client:", patient_info.get('patient_name', '')),
+        ("Date of Birth:", format_date(patient_info.get('date_of_birth'))),
+        ("Date of Injury:", format_date(patient_info.get('date_of_injury'))),
+        ("Date of Report:", format_date(patient_info.get('date_of_report'))),
+        ("Life Expectancy:", f"{patient_info.get('life_expectancy', '')} years"),
     ]
 
-    for line in info_lines:
-        para = doc.add_paragraph(line)
-        para.runs[0].font.name = FONT_NAME
-        para.runs[0].font.size = Pt(10)
+    for title, value in client_info:
+        para = doc.add_paragraph()
+        para.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
+        run = para.add_run(title)
+        run.font.name = FONT_NAME
+        run.font.bold = True
+        para.add_run("\t")
+        run2 = para.add_run(str(value))
+        run2.font.name = FONT_NAME
+        para.paragraph_format.space_after = Pt(2)
 
     doc.add_paragraph()
 
-    # Summary table
+    # Main summary table
     category_totals = cost_data['category_totals']
     totals = cost_data['totals']
 
-    # Create table: header + categories + separator
-    num_rows = 2 + len(category_totals) + 1  # title, headers, data rows, separator
-    table = doc.add_table(rows=num_rows, cols=3)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    # Filter categories with non-zero costs
+    filtered_categories = {
+        cat: data for cat, data in category_totals.items()
+        if data['annual_cost'] != 0 or data['one_time_cost'] != 0
+    }
 
-    # Set column widths
+    # Create main table
+    num_data_rows = len(filtered_categories)
+    table = doc.add_table(rows=2 + num_data_rows, cols=5)
+    table.style = 'Table Grid'
+
+    # Column widths
+    col_widths = [Inches(1.5), Inches(1.2), Inches(1.5), Inches(2.5), Inches(1.5)]
     for row in table.rows:
-        row.cells[0].width = Inches(3.5)
-        row.cells[1].width = Inches(1.5)
-        row.cells[2].width = Inches(1.5)
+        for i, width in enumerate(col_widths):
+            row.cells[i].width = width
 
-    # Row 0: Title
-    cell = table.rows[0].cells[0]
-    cell.merge(table.rows[0].cells[2])
-    format_cell(cell, 'Lifetime Projected Costs', TITLE_FONT_SIZE, bold=True, center=True, gray=True)
+    # Row 0: Title (merged)
+    title_cell = table.rows[0].cells[0]
+    for i in range(1, 5):
+        title_cell.merge(table.rows[0].cells[i])
+    format_cell_text(title_cell, 'Lifetime Projected Costs', Pt(11), bold=True, center=True, gray=True)
 
     # Row 1: Headers
-    headers = ['Section', 'Annual Cost', 'One Time Cost']
+    headers = ['Section', 'Annual Cost', 'Multiplied Annual Cost', 'One Time Cost', 'Total Lifetime Cost']
     for i, header_text in enumerate(headers):
-        format_cell(table.rows[1].cells[i], header_text, DATA_FONT_SIZE, bold=True, center=True, gray=True)
+        format_cell_text(table.rows[1].cells[i], header_text, Pt(10), bold=True, center=True, gray=True)
 
     # Data rows
     row_idx = 2
-    for category, data in category_totals.items():
-        format_cell(table.rows[row_idx].cells[0], category, DATA_FONT_SIZE)
-        format_cell(table.rows[row_idx].cells[1], format_currency(data['annual_cost']), DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[2], format_currency(data['one_time_cost']), DATA_FONT_SIZE, center=True)
+    life_exp = float(totals.get('life_expectancy', 0) or 0)
+
+    for category, data in filtered_categories.items():
+        annual = data['annual_cost']
+        one_time = data['one_time_cost']
+        multiplied = annual * life_exp
+        total_lifetime = multiplied + one_time
+
+        format_cell_text(table.rows[row_idx].cells[0], category, Pt(10))
+        format_cell_text(table.rows[row_idx].cells[1], f"{annual:,.2f}", Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[2], f"{multiplied:,.2f}", Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[3], f"{one_time:,.2f}", Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[4], f"{total_lifetime:,.2f}", Pt(10), center=True)
         row_idx += 1
 
-    # Separator row
-    for i in range(3):
-        format_cell(table.rows[row_idx].cells[i], '', DATA_FONT_SIZE, gray=True)
+    # Add empty gray row
+    add_empty_gray_row(table)
+    set_bold_borders(table)
 
     doc.add_paragraph()
 
-    # Totals table
-    totals_table = doc.add_table(rows=4, cols=2)
-    totals_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    # Totals table (3 columns)
+    totals_table = doc.add_table(rows=5, cols=3)
+    totals_table.style = 'Table Grid'
 
+    # Totals column widths
+    totals_col_widths = [Inches(1), Inches(4.2), Inches(2.0)]
     for row in totals_table.rows:
-        row.cells[0].width = Inches(3.75)
-        row.cells[1].width = Inches(2.75)
+        for i, width in enumerate(totals_col_widths):
+            row.cells[i].width = width
 
     totals_data = [
-        ('Total Annual Cost:', format_currency(totals['total_annual'])),
-        (f"Lifetime Annual Cost ({totals['life_expectancy']} years):", format_currency(totals['lifetime_annual'])),
-        ('Total One-Time Cost:', format_currency(totals['total_one_time'])),
-        ('GRAND TOTAL:', format_currency(totals['grand_total'])),
+        ('', 'Total Annual Cost:', f"{totals['total_annual']:,.2f}"),
+        ('', f"Lifetime Annual Cost (Annual x {totals['life_expectancy']} years):", f"{totals['lifetime_annual']:,.2f}"),
+        ('', 'Total Lifetime One Time Cost:', f"{totals['total_one_time']:,.2f}"),
+        ('', '', ''),  # Empty row
+        ('', 'Grand Total (total lifetime cost):', f"{totals['grand_total']:,.2f}"),
     ]
 
-    for i, (label, value) in enumerate(totals_data):
-        format_cell(totals_table.rows[i].cells[0], label, DATA_FONT_SIZE, bold=(i == 3))
-        format_cell(totals_table.rows[i].cells[1], value, DATA_FONT_SIZE, bold=(i == 3), center=True)
+    for i, (col1, col2, col3) in enumerate(totals_data):
+        row = totals_table.rows[i]
+        format_cell_text(row.cells[0], col1, Pt(10), bold=True)
+
+        if i == 3:  # Empty row
+            for cell in row.cells:
+                cell.text = ''
+                set_cell_padding(cell)
+        else:
+            is_grand = (i == 4)
+            format_cell_text(row.cells[1], col2, Pt(8) if not is_grand else Pt(10), bold=is_grand)
+            format_cell_text(row.cells[2], col3, Pt(10), bold=True, center=True)
+
+    set_bold_borders(totals_table)
+    set_padding_for_table(totals_table)
 
 
 def add_section_page(doc, patient_info, category, category_data, totals):
     """Add a section page with data table, rationale, and sources."""
-    # Patient info header
-    info_line = f"Patient: {patient_info.get('patient_name', '')} | DOB: {format_date(patient_info.get('date_of_birth'))} | Life Expectancy: {patient_info.get('life_expectancy', '')} years"
-    para = doc.add_paragraph(info_line)
-    para.runs[0].font.name = FONT_NAME
-    para.runs[0].font.size = Pt(9)
+    # Client info header (small)
+    client_info = [
+        ("Client:", patient_info.get('patient_name', '')),
+        ("Date of Birth:", format_date(patient_info.get('date_of_birth'))),
+        ("Date of Injury:", format_date(patient_info.get('date_of_injury'))),
+        ("Date of Report:", format_date(patient_info.get('date_of_report'))),
+    ]
+
+    for title, value in client_info:
+        para = doc.add_paragraph()
+        para.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
+        run = para.add_run(title)
+        run.font.name = FONT_NAME
+        run.font.bold = True
+        para.add_run("\t")
+        run2 = para.add_run(str(value))
+        run2.font.name = FONT_NAME
+        para.paragraph_format.space_after = Pt(2)
 
     doc.add_paragraph()
 
     items = category_data['items']
-
-    # Data table (7 columns)
-    num_rows = 2 + len(items) + 1  # title, headers, data rows, separator
-    table = doc.add_table(rows=num_rows, cols=7)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-    # Column widths
-    col_widths = [2.0, 0.7, 0.7, 0.8, 1.0, 0.9, 0.9]
-    for row in table.rows:
-        for i, width in enumerate(col_widths):
-            row.cells[i].width = Inches(width)
-
-    # Row 0: Category title
-    cell = table.rows[0].cells[0]
-    cell.merge(table.rows[0].cells[6])
-    format_cell(cell, category, TITLE_FONT_SIZE, bold=True, center=True, gray=True)
-
-    # Row 1: Headers
-    headers = ['Item', 'Age Init', 'Until Age', 'Cost', 'Frequency', 'Annual Cost', 'One Time']
-    for i, header_text in enumerate(headers):
-        format_cell(table.rows[1].cells[i], header_text, DATA_FONT_SIZE, bold=True, center=True, gray=True)
-
-    # Data rows
     age_init = patient_info.get('age_initiated', '')
     until_age = patient_info.get('until_age', '')
 
+    # Section data table (7 columns)
+    num_rows = 2 + len(items)  # title + headers + data rows
+    table = doc.add_table(rows=num_rows, cols=7)
+    table.style = 'Table Grid'
+
+    # Column widths
+    col_widths = [Inches(2), Inches(1), Inches(1), Inches(1), Inches(1.5), Inches(1.5), Inches(1.5)]
+    for row in table.rows:
+        for i, width in enumerate(col_widths):
+            row.cells[i].width = width
+
+    # Row 0: Category title (merged)
+    title_cell = table.rows[0].cells[0]
+    for i in range(1, 7):
+        title_cell.merge(table.rows[0].cells[i])
+    format_cell_text(title_cell, category, Pt(11), bold=True, center=True, gray=True)
+
+    # Row 1: Headers
+    headers = ['Item', 'Age Initiated', 'Until Age', 'Cost', 'Frequency of Visit', 'Annual Cost', 'One Time Cost']
+    for i, header_text in enumerate(headers):
+        format_cell_text(table.rows[1].cells[i], header_text, Pt(10), bold=True, center=True, gray=True)
+
+    # Data rows
     for row_idx, item in enumerate(items, start=2):
         item_name = item.get('item', '') or item.get('service_description', '')
-        format_cell(table.rows[row_idx].cells[0], item_name, DATA_FONT_SIZE)
-        format_cell(table.rows[row_idx].cells[1], age_init, DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[2], until_age, DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[3], format_currency(item.get('unit_cost', 0)), DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[4], item.get('frequency', ''), DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[5], format_currency(item.get('annual_cost', 0)), DATA_FONT_SIZE, center=True)
-        format_cell(table.rows[row_idx].cells[6], format_currency(item.get('one_time_cost', 0)), DATA_FONT_SIZE, center=True)
+        format_cell_text(table.rows[row_idx].cells[0], item_name, Pt(10))
+        format_cell_text(table.rows[row_idx].cells[1], age_init, Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[2], until_age, Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[3], f"{item.get('unit_cost', 0):,.2f}", Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[4], item.get('frequency', ''), Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[5], f"{item.get('annual_cost', 0):,.2f}", Pt(10), center=True)
+        format_cell_text(table.rows[row_idx].cells[6], f"{item.get('one_time_cost', 0):,.2f}", Pt(10), center=True)
 
-    # Separator row
-    last_row = len(items) + 2
-    for i in range(7):
-        format_cell(table.rows[last_row].cells[i], '', DATA_FONT_SIZE, gray=True)
+    # Add empty gray row
+    add_empty_gray_row(table)
+    set_bold_borders(table)
+
+    doc.add_paragraph()
+
+    # Totals row table (2 columns)
+    section_annual = category_data['annual_cost']
+    section_onetime = category_data['one_time_cost']
+
+    totals_section = doc.add_table(rows=2, cols=2)
+    totals_section.style = 'Table Grid'
+
+    for row in totals_section.rows:
+        row.cells[0].width = Inches(4.0)
+        row.cells[1].width = Inches(4.0)
+
+    format_cell_text(totals_section.rows[0].cells[0], 'Total Annual Cost:', Pt(10), bold=True, center=True)
+    format_cell_text(totals_section.rows[0].cells[1], f"{section_annual:,.2f}", Pt(10), bold=True, center=True)
+    format_cell_text(totals_section.rows[1].cells[0], 'Total One Time Cost:', Pt(10), bold=True, center=True)
+    format_cell_text(totals_section.rows[1].cells[1], f"{section_onetime:,.2f}", Pt(10), bold=True, center=True)
+
+    set_bold_borders(totals_section)
 
     doc.add_paragraph()
 
@@ -319,12 +483,14 @@ def add_section_page(doc, patient_info, category, category_data, totals):
     rationale_text = ' '.join(rationales) if rationales else ''
 
     rationale_table = doc.add_table(rows=2, cols=1)
-    rationale_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    rationale_table.rows[0].cells[0].width = Inches(7.0)
-    rationale_table.rows[1].cells[0].width = Inches(7.0)
+    rationale_table.style = 'Table Grid'
+    rationale_table.rows[0].cells[0].width = Inches(8.0)
+    rationale_table.rows[1].cells[0].width = Inches(8.0)
 
-    format_cell(rationale_table.rows[0].cells[0], 'Rationale', DATA_FONT_SIZE, bold=True, gray=True)
-    format_cell(rationale_table.rows[1].cells[0], rationale_text, SMALL_FONT_SIZE)
+    format_cell_text(rationale_table.rows[0].cells[0], 'Rationale', Pt(10), bold=True, gray=True)
+    format_cell_text(rationale_table.rows[1].cells[0], rationale_text, Pt(10))
+
+    set_bold_borders(rationale_table)
 
     doc.add_paragraph()
 
@@ -333,9 +499,11 @@ def add_section_page(doc, patient_info, category, category_data, totals):
     sources_text = '; '.join(set(sources)) if sources else ''
 
     sources_table = doc.add_table(rows=2, cols=1)
-    sources_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    sources_table.rows[0].cells[0].width = Inches(7.0)
-    sources_table.rows[1].cells[0].width = Inches(7.0)
+    sources_table.style = 'Table Grid'
+    sources_table.rows[0].cells[0].width = Inches(8.0)
+    sources_table.rows[1].cells[0].width = Inches(8.0)
 
-    format_cell(sources_table.rows[0].cells[0], 'Sources', DATA_FONT_SIZE, bold=True, gray=True)
-    format_cell(sources_table.rows[1].cells[0], sources_text, SMALL_FONT_SIZE)
+    format_cell_text(sources_table.rows[0].cells[0], 'Sources', Pt(10), bold=True, gray=True)
+    format_cell_text(sources_table.rows[1].cells[0], sources_text, Pt(10))
+
+    set_bold_borders(sources_table)
