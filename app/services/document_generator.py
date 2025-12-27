@@ -81,6 +81,8 @@ def add_empty_gray_row(table):
     for cell in empty_row.cells:
         set_cell_background(cell, GRAY_BACKGROUND)
         cell.text = ""
+        # Set minimal height for the gray row
+        set_cell_padding(cell)
 
     tbl = table._tbl
     last_row = tbl.findall(qn("w:tr"))[-1]
@@ -91,27 +93,37 @@ def add_empty_gray_row(table):
         if tcPr is None:
             tcPr = OxmlElement("w:tcPr")
             tc.insert(0, tcPr)
-        tcBorders = tcPr.find(qn("w:tcBorders"))
-        if tcBorders is None:
-            tcBorders = OxmlElement("w:tcBorders")
-            tcPr.append(tcBorders)
 
-        # Remove inner borders
-        for border_name in ["top", "bottom", "insideH", "insideV"]:
+        # Remove existing borders element if present
+        existing_borders = tcPr.find(qn("w:tcBorders"))
+        if existing_borders is not None:
+            tcPr.remove(existing_borders)
+
+        tcBorders = OxmlElement("w:tcBorders")
+        tcPr.append(tcBorders)
+
+        # Set all borders to nil first
+        for border_name in ["top", "bottom", "left", "right"]:
             border = OxmlElement(f"w:{border_name}")
             border.set(qn("w:val"), "nil")
             tcBorders.append(border)
 
-        # Bold left border for first cell
+        # Bold left border for first cell only
         if idx == 0:
+            left_border = tcBorders.find(qn("w:left"))
+            if left_border is not None:
+                tcBorders.remove(left_border)
             left_border = OxmlElement("w:left")
             left_border.set(qn("w:val"), "single")
             left_border.set(qn("w:sz"), "12")
             left_border.set(qn("w:color"), "000000")
             tcBorders.append(left_border)
 
-        # Bold right border for last cell
+        # Bold right border for last cell only
         if idx == len(cells) - 1:
+            right_border = tcBorders.find(qn("w:right"))
+            if right_border is not None:
+                tcBorders.remove(right_border)
             right_border = OxmlElement("w:right")
             right_border.set(qn("w:val"), "single")
             right_border.set(qn("w:sz"), "12")
@@ -355,9 +367,7 @@ def add_appendix_a(doc, patient_info, cost_data):
     add_empty_gray_row(table)
     set_bold_borders(table)
 
-    doc.add_paragraph()
-
-    # Totals table (3 columns)
+    # Totals table (3 columns) - no paragraph gap
     totals_table = doc.add_table(rows=5, cols=3)
     totals_table.style = 'Table Grid'
 
@@ -456,9 +466,7 @@ def add_section_page(doc, patient_info, category, category_data, totals):
     add_empty_gray_row(table)
     set_bold_borders(table)
 
-    doc.add_paragraph()
-
-    # Totals row table (2 columns)
+    # Totals row table (2 columns) - no paragraph gap
     section_annual = category_data['annual_cost']
     section_onetime = category_data['one_time_cost']
 
@@ -476,9 +484,7 @@ def add_section_page(doc, patient_info, category, category_data, totals):
 
     set_bold_borders(totals_section)
 
-    doc.add_paragraph()
-
-    # Rationale table
+    # Rationale table - no paragraph gap
     rationales = [item.get('rationale', '') for item in items if item.get('rationale')]
     rationale_text = ' '.join(rationales) if rationales else ''
 
@@ -492,9 +498,7 @@ def add_section_page(doc, patient_info, category, category_data, totals):
 
     set_bold_borders(rationale_table)
 
-    doc.add_paragraph()
-
-    # Sources table
+    # Sources table - no paragraph gap
     sources = [item.get('source', '') for item in items if item.get('source')]
     sources_text = '; '.join(set(sources)) if sources else ''
 
